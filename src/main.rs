@@ -1,15 +1,10 @@
-use anyhow::bail;
 use async_openai::{
     types::{ChatCompletionRequestMessageArgs, CreateChatCompletionRequestArgs, Role},
     Client,
 };
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::{
-    env::consts::OS,
-    process::{Command, Stdio},
-};
-use text_io::read;
+use std::process::{Command, Stdio};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -18,10 +13,6 @@ struct Args {
     #[arg(short, long)]
     description: String,
 
-    /// Programming language to generate this project in
-    #[arg(short, long, default_value = "rust")]
-    language: String,
-
     /// The name of the project which will be the name of the directory created
     #[arg(short, long, default_value = "myapp")]
     name: String,
@@ -29,45 +20,60 @@ struct Args {
 
 #[derive(Deserialize, Serialize)]
 struct OutputJson {
-    script: String,
+    dockerfile: String,
+    makefile: String,
+    source_files: Vec<SourceFile>,
+    readme: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct SourceFile {
+    name: String,
+    contents: String,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let prompt = format!(
-            "Take the following programming language, application requirements, and project name then generate a valid bash script that does the following.
-            1. Installs all operating system level requirements to run the application for the {os} operating system.
-            2. Creates a new directory with the project name.
-            3. Create all of the files and folders necessary to run the application that fulfills the application requirements.
+            "Take the following programming language, application requirements, and produce a working application.
 
-            Script Guidelines:
-            - If the bash script must be run in a specific directory, please include the necessary commands to change the directory.
-            - Consolidate as many commands as possible into a single command.
-            - If the bash command requires user input, please include the necessary commands to provide the input.
-            - If the bash command requires restarting a terminal session, please include the necessary commands to restart the terminal session.
-            - If the bash command requires a specific environment variable, please include the necessary commands to set the environment variable.
-
+            your solution must include:
+            1. Dockerfile that allows the application to be built and run
+            2. Makefile that contains the following commands assuming that the application is executed using the Dockerfile.
+                a. make build
+                b. make run
+                c. make test
+            3. Readme with instructions required to build and run the application
+            4. files with the source code for the application
+            
             The output must match the provided output json schema and be a valid json.
 
             Project Name:
             {name}
 
             Programming Language:
-            {language}
+            javascript
 
             Application Requirements:
             {description}
 
             Output Json schema:
             {{
-                \"script\": \"mkdir {name} && cd {name} && ...\"
+                \"dockerfile\": \"dockerfile contents\",
+                \"makefile\": \"makefile contents\",
+                \"readme\": \"readme contents\",
+                \"source_files\": [
+                    {{
+                        \"name\": \"...\",
+                        \"contents\": \"...\"
+                    }},
+                    ...
+                ]
             }}
 
             Respond ONLY with the data portion of a valid Json object. No schema definition required. No other words.",
-            os=OS,
             name=args.name,
-            language=args.language,
             description=args.description
     );
     println!("Sending prompt: {}", prompt);
@@ -84,54 +90,56 @@ You are not allowed to return anything but a valid Json object.").build()?,
     let res = client.chat().create(req).await?;
     println!("Got a response ✅ Attempting to decode the contents...");
     println!("Response:\n{}", &res.choices[0].message.content);
-    let contents: OutputJson = serde_json::from_str(&res.choices[0].message.content)?;
+    let contents: OutputJson = serde_json::from_str(&res.choices[0].message.content).map_err(|e| {
+        println!("Failed to decode the contents, please try again. Sometimes OpenAI returns invalid JSON.");
+        e
+    })?;
     println!("Success, the robot has obeyed our orders.\n");
 
-    println!("Let's setup the project");
+    println!("Generating the project files... 🤖");
 
-    println!("Does this script look correct? `{script}`", script=contents.script);
-    println!("Please input Y/N");
-    let response: String = read!("{}\n");
-    let cmd = {
-        if response.replace(" ", "").to_uppercase() == "Y" {
-            contents.script.clone()
-        } else {
-            println!("Damn robot, can you fix the command? Otherwise enter `skip` to go to the next step");
-            let response: String = read!("{}\n");
-            if response.contains("skip") {
-                bail!("Robot failed to generate a valid script");
-            } else {
-                response
-            }
-        }
-    };
+    // Create a folder with the project name
+    let project_name = args.name;
+    let project_path = format!("./{}", project_name);
+    println!("Creating project folder `{}`", project_path);
+    Command::new("mkdir")
+        .arg(project_path.clone())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .output()?;
 
+    // Create a dockerfile
+    let dockerfile_path = format!("{}/Dockerfile", project_path);
+    println!("Creating dockerfile `{}`", dockerfile_path);
+    std::fs::write(dockerfile_path.clone(), contents.dockerfile)?;
 
-    let mut child = Command::new("bash")
-        .arg("-c")
-        .arg(&cmd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    // Create a makefile
+    let makefile_path = format!("{}/Makefile", project_path);
+    println!("Creating makefile `{}`", makefile_path);
+    std::fs::write(makefile_path.clone(), contents.makefile)?;
 
-    // Print stdout and stderr from the child process
-    child.stdout.as_mut().map(|stdout| {
-        std::io::copy(stdout, &mut std::io::stdout()).unwrap();
-    });
-    child.stderr.as_mut().map(|stderr| {
-        std::io::copy(stderr, &mut std::io::stderr()).unwrap();
-    });
+    // Create a readme
+    let readme_path = format!("{}/README.md", project_path);
+    println!("Creating readme `{}`", readme_path);
+    std::fs::write(readme_path.clone(), contents.readme)?;
 
-    let status = child.wait()?;
-    if !status.success() {
-        bail!(
-            "Failed to execute `{}`. Exit code: {:?}",
-            cmd,
-            status.code()
-        );
+    // Create source files
+    let source_files_path = project_path;
+    println!("Creating source files folder `{}`", source_files_path);
+    // iterate through the source files and create them
+    for source_file in contents.source_files {
+        let source_file_path = format!("{}/{}", source_files_path, source_file.name);
+        println!("Creating source file `{}`", source_file_path);
+        std::fs::write(source_file_path.clone(), source_file.contents)?;
     }
+
+    println!("Project files generated successfully ✅\n");
+    println!("Disclaimer: This project was generated by a robot, please review the code before executing it.\n");
+    println!("To execute the project, run the following commands:\n");
+    println!("cd {}", project_name);
+    println!("make build");
+    println!("make run");
+    // print disclaimer about the project
 
     Ok(())
 }
-
