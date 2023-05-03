@@ -13,7 +13,11 @@ struct Args {
     #[arg(short, long)]
     description: String,
 
-    /// The name of the project which will be the name of the directory created
+    /// The programming language to use
+    #[arg(short, long, default_value = "javascript")]
+    language: String,
+
+    /// The name of the project which will also be the name of the directory created
     #[arg(short, long, default_value = "myapp")]
     name: String,
 }
@@ -46,14 +50,14 @@ async fn main() -> anyhow::Result<()> {
                 c. make test
             3. Readme with instructions required to build and run the application
             4. files with the source code for the application
-            
+
             The output must match the provided output json schema and be a valid json.
 
             Project Name:
             {name}
 
             Programming Language:
-            javascript
+            {language}
 
             Application Requirements:
             {description}
@@ -74,7 +78,8 @@ async fn main() -> anyhow::Result<()> {
 
             Respond ONLY with the data portion of a valid Json object. No schema definition required. No other words.",
             name=args.name,
-            description=args.description
+            description=args.description,
+            language=args.language
     );
     println!("Sending prompt: {}", prompt);
     let client = Client::new();
@@ -128,8 +133,21 @@ You are not allowed to return anything but a valid Json object.").build()?,
     println!("Creating source files folder `{}`", source_files_path);
     // iterate through the source files and create them
     for source_file in contents.source_files {
+        if source_file.name.to_lowercase().contains("makefile") || source_file.name.to_lowercase().contains("dockerfile") || source_file.name.to_lowercase().contains("readme") {
+            println!("Skipping source file `{}` because it was already created", source_file.name);
+            continue;
+        }
         let source_file_path = format!("{}/{}", source_files_path, source_file.name);
+        let path = std::path::Path::new(&source_file_path);
         println!("Creating source file `{}`", source_file_path);
+        match path.parent() {
+            Some(parent) => {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)?;
+                }
+            },
+            None => {}
+        }
         std::fs::write(source_file_path.clone(), source_file.contents)?;
     }
 
