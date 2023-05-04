@@ -7,8 +7,9 @@ Generate a working dockerized app using prompt engineering.
 ### How to use it?
 
 ```
-cargo run -- --description 'application that renders a fractal on a canvas'
+OPENAI_API_KEY=somekey cargo run -- --description 'application that renders a fractal on a canvas' --language javascript
 ```
 
-For now, the only programming language, do not try to override this in the prompt as it will lead to weird scenarios.
+You can get a key from https://platform.openai.com/account/api-keys
+
 
