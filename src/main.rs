@@ -24,6 +24,13 @@ struct Args {
     /// The model to use, see https://platform.openai.com/docs/models for especific models
     #[arg(short, long, default_value = "gpt-3.5-turbo")]
     model: String,
+
+    /// Max allowed tokens
+    /// See https://beta.openai.com/docs/api-reference/completions/create#max_tokens
+    /// for more information
+    /// Default: 2048
+    #[arg(short, long, default_value = "2048")]
+    tokens: u16,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -95,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
     );
     println!("Sending prompt: {}", prompt);
     let client = Client::new();
-    let req = CreateChatCompletionRequestArgs::default().max_tokens(2048u16).model(args.model).messages([
+    let req = CreateChatCompletionRequestArgs::default().max_tokens(args.tokens).model(args.model).messages([
         ChatCompletionRequestMessageArgs::default().role(Role::System).content("You are a helpful programming assistant.
 You are expected to process an application description and generate the files and steps necessary to create the application as using your language model.
 You can only respond with a Json object that matches the provided output schema.
