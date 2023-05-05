@@ -20,6 +20,10 @@ struct Args {
     /// The name of the project which will also be the name of the directory created
     #[arg(short, long, default_value = "myapp")]
     name: String,
+
+    /// The model to use, see https://platform.openai.com/docs/models for especific models
+    #[arg(short, long, default_value = "gpt-3.5-turbo")]
+    model: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -46,21 +50,28 @@ async fn main() -> anyhow::Result<()> {
             1. Dockerfile that allows the application to be built and run
             2. Makefile that contains the following commands assuming that the application is executed using the Dockerfile.
                 a. make build
-                b. make run
-                c. make test
+                b. make run (make sure that docker cleans up after itself)
+                c. make test (make sure that dockedr cleans up after itself)
             3. Readme with instructions required to build and run the application
             4. files with the source code for the application
+
 
             The output must match the provided output json schema and be a valid json.
 
             Project Name:
+            ---
             {name}
+            ---
 
             Programming Language:
+            ---
             {language}
+            ---
 
             Application Requirements:
+            ---
             {description}
+            ---
 
             Output Json schema:
             {{
@@ -72,9 +83,10 @@ async fn main() -> anyhow::Result<()> {
                         \"name\": \"...\",
                         \"contents\": \"...\"
                     }},
-                    ...
                 ]
             }}
+
+            Make sure that you do not include invalid control characters in the output json.
 
             Respond ONLY with the data portion of a valid Json object. No schema definition required. No other words.",
             name=args.name,
@@ -83,7 +95,7 @@ async fn main() -> anyhow::Result<()> {
     );
     println!("Sending prompt: {}", prompt);
     let client = Client::new();
-    let req = CreateChatCompletionRequestArgs::default().max_tokens(2048u16).model("gpt-3.5-turbo").messages([
+    let req = CreateChatCompletionRequestArgs::default().max_tokens(2048u16).model(args.model).messages([
         ChatCompletionRequestMessageArgs::default().role(Role::System).content("You are a helpful programming assistant.
 You are expected to process an application description and generate the files and steps necessary to create the application as using your language model.
 You can only respond with a Json object that matches the provided output schema.
@@ -116,25 +128,34 @@ You are not allowed to return anything but a valid Json object.").build()?,
     // Create a dockerfile
     let dockerfile_path = format!("{}/Dockerfile", project_path);
     println!("Creating dockerfile `{}`", dockerfile_path);
-    std::fs::write(dockerfile_path.clone(), contents.dockerfile)?;
+    let dockerfile_contents = contents.dockerfile;
+    std::fs::write(dockerfile_path.clone(), dockerfile_contents)?;
 
     // Create a makefile
     let makefile_path = format!("{}/Makefile", project_path);
     println!("Creating makefile `{}`", makefile_path);
-    std::fs::write(makefile_path.clone(), contents.makefile)?;
+    let makefile_contents = contents.makefile;
+    std::fs::write(makefile_path.clone(), makefile_contents)?;
 
     // Create a readme
     let readme_path = format!("{}/README.md", project_path);
     println!("Creating readme `{}`", readme_path);
-    std::fs::write(readme_path.clone(), contents.readme)?;
+    let readme_contents = contents.readme;
+    std::fs::write(readme_path.clone(), readme_contents)?;
 
     // Create source files
     let source_files_path = project_path;
     println!("Creating source files folder `{}`", source_files_path);
     // iterate through the source files and create them
     for source_file in contents.source_files {
-        if source_file.name.to_lowercase().contains("makefile") || source_file.name.to_lowercase().contains("dockerfile") || source_file.name.to_lowercase().contains("readme") {
-            println!("Skipping source file `{}` because it was already created", source_file.name);
+        if source_file.name.to_lowercase().contains("makefile")
+            || source_file.name.to_lowercase().contains("dockerfile")
+            || source_file.name.to_lowercase().contains("readme")
+        {
+            println!(
+                "Skipping source file `{}` because it was already created",
+                source_file.name
+            );
             continue;
         }
         let source_file_path = format!("{}/{}", source_files_path, source_file.name);
@@ -145,10 +166,11 @@ You are not allowed to return anything but a valid Json object.").build()?,
                 if !parent.exists() {
                     std::fs::create_dir_all(parent)?;
                 }
-            },
+            }
             None => {}
         }
-        std::fs::write(source_file_path.clone(), source_file.contents)?;
+        let source_file_contents = source_file.contents;
+        std::fs::write(source_file_path.clone(), source_file_contents)?;
     }
 
     println!("Project files generated successfully ✅\n");
