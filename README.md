@@ -1,6 +1,5 @@
 ## Code-Muse
-
-![darks](https://user-images.githubusercontent.com/1176339/236716023-ff392b33-dbb0-47cc-9845-4d6c6eda6a33.png)
+![wah2vqrd6fza1](https://github.com/security-union/code-muse-rs/assets/1176339/9cff4fcf-cb3a-4113-9133-1f295661c5a2)
 
 ## ▶️ YouTube Video
 
